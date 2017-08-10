@@ -29,7 +29,7 @@ typedef vector<double> vec_tDouble;
 typedef vector<float> vec_t;
 typedef vector<vec_t> mat_t;
 void load(const char* srcdir, smat_t &R, bool ifALS, bool with_weights = false);
-void initial(mat_t &X, long k, long n);
+void initial_col(mat_t &X, long k, long n);
 class rate_t{
 	public:
 		int i, j; float v, weight;
