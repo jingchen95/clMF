@@ -81,12 +81,12 @@ void inverseMatrix_CholeskyMethod(int n, __global float* A, __global float *p) {
 		}
 	}
 }
-/*
+
 void Mt_byM_multiply_k(int i, int j,  __global float *H, __global float *Result, const long ptr, __global const unsigned *idx){
 	int base = get_group_id(0)*j*j;
 	int ss = get_local_id(0);
 	int gg = get_local_size(0);
-	float SUM[100] = {0};
+	float SUM[100] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 	for (unsigned I = ss; I < j; I+=gg){
 		for (unsigned J = I; J < j; ++J) {
 			for (unsigned K = 0; K < i; ++K){
@@ -98,40 +98,106 @@ void Mt_byM_multiply_k(int i, int j,  __global float *H, __global float *Result,
 		}
 	}
 }
-*/
-void Mt_byM_multiply_k(int i, int j,  __global float *H, __global float *Result, const long ptr, __global const unsigned *idx){
-	int base = get_group_id(0)*j*j;
-	int ss = get_local_id(0);
-	int gg = get_local_size(0);
-	float SUM[100] = {0};
-	int n=(i-1)/8+1;
-	int8 offset;
-	float8 cj;
-	for (unsigned I = ss; I < j; I+=gg){
-		for (unsigned J = I; J < j; ++J) {
-            cj=(float8)(0);
-			for (unsigned K = 0; K < n-1; ++K){
-				offset = (int8)(idx[ptr + 0 + K * 8] * j,idx[ptr + 1 + K * 8] * j,idx[ptr + 2 + K * 8] * j,idx[ptr + 3 + K * 8] * j,idx[ptr + 4 + K * 8] * j,idx[ptr + 5 + K * 8] * j
-                     ,idx[ptr + 6 + K * 8] * j,idx[ptr + 7 + K * 8] * j);
-                cj.s0 += H[offset.s0+I]*H[offset.s0+J];
-                cj.s1 += H[offset.s1+I]*H[offset.s1+J];
-                cj.s2 += H[offset.s2+I]*H[offset.s2+J];
-                cj.s3 += H[offset.s3+I]*H[offset.s3+J];
-                cj.s4 += H[offset.s4+I]*H[offset.s4+J];
-                cj.s5 += H[offset.s5+I]*H[offset.s5+J];
-                cj.s6 += H[offset.s6+I]*H[offset.s6+J];
-                cj.s7 += H[offset.s7+I]*H[offset.s7+J];
 
-				SUM[I*j+J] = cj.s0+cj.s1+cj.s2+cj.s3+cj.s4+cj.s5+cj.s6+cj.s7;
-			}
-			for (unsigned K = 8*(n-1); K < i; ++K){
-				unsigned offset = idx[ptr + K] * j;
-				SUM[I*j+J] += H[offset + I] * H[offset + J];
-			}
-			Result[base+(J*j)+I] = SUM[I*j+J];
-			Result[base+(I*j)+J] = SUM[I*j+J];
-		}
-	}
+void batchsolve(int i, int j, __global float *H, __global float *val, __global float *result,__global unsigned *colMajored_sparse_idx,__global long *row_ptr,__global unsigned *col_idx)
+{
+    int basev = get_group_id(0) * j;
+    int ss = get_local_id(0);
+	int gg = get_local_size(0);
+	__local float a[300];
+	__local float b[30];
+	float subvector0 = 0, subvector1 = 0, subvector2 = 0,subvector3 = 0,subvector4 = 0, subvector5 = 0,subvector6 = 0,subvector7 = 0,subvector8 = 0,subvector9 = 0;
+	//printf("enter batchsolve.\n");
+	unsigned n = row_ptr[i+1]-row_ptr[i];
+	//printf("n=%d.\n",n);
+	long nn = n/30;
+	if(nn>0)
+    {
+	//printf("inner enter.\n");
+        for(unsigned nm=0;nm<nn;nm++)
+        {
+            for (unsigned idx = row_ptr[i]+nm*30+ss; idx < (nm+1)*30+row_ptr[i]; idx+=gg)
+            {
+                unsigned idx2 = colMajored_sparse_idx[idx];
+                b[idx-(nm*30)-row_ptr[i]] = val[idx2];
+                for(int ii=0;ii<j;ii++)
+                {
+                    a[(idx-(nm*30)-row_ptr[i])*j+ii]=H[(col_idx[idx] * j) + ii];
+                }
+            }
+            for(int gh=0;gh<30;gh++)
+            {
+                subvector0 += b[gh]*a[gh*j];
+                subvector1 += b[gh]*a[gh*j+1];
+                subvector2 += b[gh]*a[gh*j+2];
+                subvector3 += b[gh]*a[gh*j+3];
+                subvector4 += b[gh]*a[gh*j+4];
+                subvector5 += b[gh]*a[gh*j+5];
+                subvector6 += b[gh]*a[gh*j+6];
+                subvector7 += b[gh]*a[gh*j+7];
+                subvector8 += b[gh]*a[gh*j+8];
+                subvector9 += b[gh]*a[gh*j+9];
+            }
+        }
+        for (unsigned idx = row_ptr[i]+nn*30+ss; idx < row_ptr[i+1]; idx+=gg)
+        {
+            unsigned idx2 = colMajored_sparse_idx[idx];
+            b[idx-(nn*30)-row_ptr[i]] = val[idx2];
+            for(int ii=0;ii<j;ii++)
+            {
+                a[(idx-(nn*30)-row_ptr[i])*j+ii]=H[(col_idx[idx] * j) + ii];
+            }
+        }
+        for(unsigned gh=0;gh<row_ptr[i+1]-row_ptr[i]-nn*30;gh++)
+        {
+            subvector0 += b[gh]*a[gh*j];
+            subvector1 += b[gh]*a[gh*j+1];
+            subvector2 += b[gh]*a[gh*j+2];
+            subvector3 += b[gh]*a[gh*j+3];
+            subvector4 += b[gh]*a[gh*j+4];
+            subvector5 += b[gh]*a[gh*j+5];
+            subvector6 += b[gh]*a[gh*j+6];
+            subvector7 += b[gh]*a[gh*j+7];
+            subvector8 += b[gh]*a[gh*j+8];
+            subvector9 += b[gh]*a[gh*j+9];
+        }
+    }
+	else
+    {
+	//printf("else enter.\n");
+        for (unsigned idx = row_ptr[i]+ss; idx < row_ptr[i+1]; idx+=gg)
+        {
+            unsigned idx2 = colMajored_sparse_idx[idx];
+            b[idx-row_ptr[i]] = val[idx2];
+            for(int ii=0;ii<j;ii++)
+            {
+                a[(idx-row_ptr[i])*j+ii]=H[(col_idx[idx] * j) + ii];
+            }
+        }
+        for(unsigned gh=0;gh<n;gh++)
+        {
+            subvector0 += b[gh]*a[gh*j];
+            subvector1 += b[gh]*a[gh*j+1];
+            subvector2 += b[gh]*a[gh*j+2];
+            subvector3 += b[gh]*a[gh*j+3];
+            subvector4 += b[gh]*a[gh*j+4];
+            subvector5 += b[gh]*a[gh*j+5];
+            subvector6 += b[gh]*a[gh*j+6];
+            subvector7 += b[gh]*a[gh*j+7];
+            subvector8 += b[gh]*a[gh*j+8];
+            subvector9 += b[gh]*a[gh*j+9];
+        }
+    }
+    result[basev+0]=subvector0;
+    result[basev+1]=subvector1;
+    result[basev+2]=subvector2;
+    result[basev+3]=subvector3;
+    result[basev+4]=subvector4;
+    result[basev+5]=subvector5;
+    result[basev+6]=subvector6;
+    result[basev+7]=subvector7;
+    result[basev+8]=subvector8;
+    result[basev+9]=subvector9;
 }
 
 __kernel void updateW_overH_kernel( const ulong rows,
@@ -158,6 +224,7 @@ __kernel void updateW_overH_kernel( const ulong rows,
    for (int Rw = a; Rw < rows; Rw += v){
 		__global float *Wr = &W[Rw*k];
 		unsigned omegaSize = row_ptr[Rw + 1] - row_ptr[Rw];
+		//printf("omegasize=%d.\n",omegaSize);
 		if (omegaSize>0){
             		Mt_byM_multiply_k(omegaSize, k, H, subMatrix, row_ptr[Rw], col_idx);
             barrier(CLK_GLOBAL_MEM_FENCE);
@@ -170,6 +237,7 @@ __kernel void updateW_overH_kernel( const ulong rows,
 	           inverseMatrix_CholeskyMethod(k, subMatrix, p);
 	     }
 	    barrier(CLK_GLOBAL_MEM_FENCE);
+	    /*
 	    for (unsigned c = s; c < k; c+=g){
                 subVector[baseV + c] = 0;
                 for (unsigned idx = row_ptr[Rw]; idx < row_ptr[Rw + 1]; ++idx){
@@ -177,6 +245,9 @@ __kernel void updateW_overH_kernel( const ulong rows,
                     subVector[baseV + c] += val[idx2] * H[(col_idx[idx] * k) + c];
                 }
             }
+            */
+            batchsolve(Rw,k,H,val,subVector,colMajored_sparse_idx,row_ptr,col_idx);
+
             barrier(CLK_GLOBAL_MEM_FENCE);
 
             for (unsigned c = s; c < k; c+=g){
@@ -184,7 +255,7 @@ __kernel void updateW_overH_kernel( const ulong rows,
 	             for(unsigned subVid=0;subVid<k;++subVid){
 			     Wr[c] +=subVector[baseV+subVid]*subMatrix[base + c * k+subVid];
                 }
-            }
+	}
 
             barrier(CLK_GLOBAL_MEM_FENCE);
 
@@ -254,4 +325,3 @@ __kernel void updateH_overW_kernel( const ulong cols,
 		}
       }
 }
-
